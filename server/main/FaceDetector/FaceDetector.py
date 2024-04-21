@@ -1,5 +1,7 @@
 import os
 import cv2
+import numpy as np
+
 from server.settings import BASE_DIR
 
 
@@ -62,7 +64,6 @@ class FaceDetector:
             # Если не обнаружено глаз, считаем, что человек плачет
             if len(eyes) == 0: return True
         return False
-
 
 class CameraAnalyzer:
     def __init__(self):
@@ -129,3 +130,27 @@ class CameraAnalyzer:
 
         cap.release()
         cv2.destroyAllWindows()
+
+    def analyze_image(self, image, ):
+        # Вывод отладочной информации о размере и типе полученного изображения
+        # print(f"Received image size: {image.size} bytes")
+        # print(f"Received image type: {type(image)}")
+        try:
+            # Преобразуем изображение в массив байт
+            image_bytes = image.read()
+            # Преобразуем массив байт в массив numpy
+            nparr = np.frombuffer(image_bytes, np.uint8)
+            # Декодируем массив numpy в изображение
+            frame = cv2.imdecode(nparr, cv2.IMREAD_COLOR)
+
+            # Проводим анализ изображения
+            faces = self.face_detector.detect_faces(frame)
+            eyes = self.face_detector.detect_eyes(frame)
+            mouth = self.face_detector.detect_mouth(frame)
+            emotion = self.face_detector.detect_crying(frame, faces)
+
+            print(f'Emotion: {emotion}, faces: {len(faces)}, eyes: {len(eyes)}, mouth: {len(mouth)}')
+            return emotion
+        except Exception as e:
+            print(f"Error during image analysis: {e}")
+            return None
