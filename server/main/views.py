@@ -1,15 +1,10 @@
-from django.shortcuts import render
-from django.http import JsonResponse
-import cv2
+from rest_framework.response import Response
+from rest_framework.decorators import api_view
+from main.FaceDetector.FaceDetector import CameraAnalyzer
 
-def detect(request):
-    # Получение кадра из видеопотока
-    video_capture = cv2.VideoCapture(0)
-    ret, frame = video_capture.read()
 
-    # Обработка кадра с помощью OpenCV для обнаружения лиц с плачем
-    # (Здесь нужно использовать вашу обученную модель)
-    crying_detected = False  # Предположим, что вам нужно обучить модель для этого
-
-    # Возврат результата в формате JSON
-    return JsonResponse({'crying_detected': crying_detected})
+@api_view(['GET'])
+def analyze_camera(request):
+    analyzer = CameraAnalyzer()
+    analyzer.analyze_camera()  # Вызываем метод анализа камеры
+    return Response({"message": "Анализ камеры завершен"})

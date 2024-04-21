@@ -2,13 +2,23 @@ import os
 import cv2
 from server.settings import BASE_DIR
 
+
 class FaceDetector:
-    def __init__(self, cascade_path_face='haarcascade_frontalface_default.xml', cascade_path_eye='haarcascade_eye.xml'):
+    # Здесь другие XML файлы можно посмотреть и найти
+    # https://github.com/anaustinbeing/haar-cascade-files/tree/master
+    def __init__(self, cascade_path_face='haarcascade_frontalface_default.xml',
+                 cascade_path_mouth='haarcascade_mcs_mouth.xml', cascade_path_eye='haarcascade_eye.xml'):
         # Определение лица
         self.face_cascade_path = os.path.join(BASE_DIR, 'main', 'FaceDetector', cascade_path_face)
         if not os.path.isfile(self.face_cascade_path):
             raise FileNotFoundError(f"Файл каскада лица '{self.face_cascade_path}' не найден.")
         self.face_cascade = cv2.CascadeClassifier(self.face_cascade_path)
+
+        # Определение рта
+        self.mouth_cascade_path = os.path.join(BASE_DIR, 'main', 'FaceDetector', cascade_path_mouth)
+        if not os.path.isfile(self.mouth_cascade_path):
+            raise FileNotFoundError(f"Файл каскада рта '{self.mouth_cascade_path}' не найден.")
+        self.mouth_cascade = cv2.CascadeClassifier(self.mouth_cascade_path)
 
         # Определение глаза
         self.eye_cascade_path = os.path.join(BASE_DIR, 'main', 'FaceDetector', cascade_path_eye)
@@ -25,8 +35,24 @@ class FaceDetector:
     # Определение глаза в кадре
     def detect_eyes(self, frame):
         gray = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
-        eyes = self.eye_cascade.detectMultiScale(gray, scaleFactor=1.3, minNeighbors=5)
-        return eyes
+        eyes = self.eye_cascade.detectMultiScale(gray, scaleFactor=1.5, minNeighbors=8)
+        eye_centers = []
+        for (ex, ey, ew, eh) in eyes:
+            eye_center_x = ex + ew // 2
+            eye_center_y = ey + eh // 2
+            eye_centers.append((eye_center_x, eye_center_y))
+        return eye_centers
+
+    # Определение области рта в кадре
+    def detect_mouth(self, frame):
+        gray = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
+        mouths = self.mouth_cascade.detectMultiScale(gray, scaleFactor=1.5, minNeighbors=8)
+        mouth_centers = []
+        for (mx, my, mw, mh) in mouths:
+            mouth_center_x = mx + mw // 2
+            mouth_center_y = my + mh // 2
+            mouth_centers.append((mouth_center_x, mouth_center_y))
+        return mouth_centers
 
     # Определение плача человека в кадре
     def detect_crying(self, frame, faces):
@@ -37,6 +63,7 @@ class FaceDetector:
             if len(eyes) == 0: return True
         return False
 
+
 class CameraAnalyzer:
     def __init__(self):
         self.face_detector = FaceDetector()
@@ -46,7 +73,6 @@ class CameraAnalyzer:
 
     def smooth_values(self, x, y, smoothing_factor=0.5):
         if smoothing_factor >= 1.0: ValueError("Сглаживание должно быть меньше 1.0")
-
         if self.smoothed_x is None or self.smoothed_y is None:
             self.smoothed_x = x
             self.smoothed_y = y
@@ -55,24 +81,30 @@ class CameraAnalyzer:
             self.smoothed_y = smoothing_factor * self.smoothed_y + (1 - smoothing_factor) * y
         return int(self.smoothed_x), int(self.smoothed_y)
 
-    def annotate_frame(self, frame, faces, eyes ,emotion, name_emotion="Crying"):
-        # Координаты лица
+    def annotate_frame(self, frame, faces, eyes, mouth, emotion, name_emotion="Crying"):
         for (x, y, w, h) in faces:
             # Сглаживаем координаты рамки
             smoothed_x, smoothed_y = self.smooth_values(x + w // 2, y + h // 2 + h // 4)
-            # Рисуем прямоугольник вокруг лица
+
+            # Отображаем лицо
             cv2.rectangle(frame, (x, y), (x + w, y + h), (255, 0, 0), 2)
-            # Рисуем точку в центре губ
             cv2.circle(frame, (smoothed_x, smoothed_y), 3, (0, 255, 0), -1)
+
+            # Проверяем каждый глаз
+            for (eye_center_x, eye_center_y) in eyes:
+                # Проверяем, находится ли центр глаза внутри лица
+                if x < eye_center_x < x + w and y < eye_center_y < y + h:
+                    cv2.circle(frame, (eye_center_x, eye_center_y), 3, (0, 255, 0), -1)
+
+            # Проверяем каждый рот
+            for (mouth_center_x, mouth_center_y) in mouth:
+                # Проверяем, находится ли центр рта внутри лица
+                if x < mouth_center_x < x + w and y < mouth_center_y < y + h:
+                    cv2.circle(frame, (mouth_center_x, mouth_center_y), 3, (0, 255, 0), -1)
+
+            # Проверяем наличие эмоции и добавляем текст над лицом
             if emotion:
-                # Добавляем текст над лицом
                 cv2.putText(frame, name_emotion, (x, y - 10), cv2.FONT_HERSHEY_SIMPLEX, 0.9, (0, 0, 255), 2)
-        # Координаты глаз
-        for (ex, ey, ew, eh) in eyes:
-            # Рисуем круг в центре каждого глаза
-            center_x = ex + ew // 2
-            center_y = ey + eh // 2
-            cv2.circle(frame, (center_x, center_y), 3, (0, 255, 0), -1)
 
     def analyze_camera(self):
         # Используем камеру с индексом 0 (обычно это встроенная камера)
@@ -86,9 +118,10 @@ class CameraAnalyzer:
 
             faces = self.face_detector.detect_faces(frame)
             eyes = self.face_detector.detect_eyes(frame)
+            mouth = self.face_detector.detect_mouth(frame)
             emotion = self.face_detector.detect_crying(frame, faces)
 
-            self.annotate_frame(frame=frame, faces=faces, eyes=eyes, emotion=emotion)
+            self.annotate_frame(frame=frame, faces=faces, eyes=eyes, mouth=mouth, emotion=emotion)
 
             cv2.imshow('frame', frame)
             if cv2.waitKey(1) & 0xFF == ord('q'):
@@ -96,8 +129,3 @@ class CameraAnalyzer:
 
         cap.release()
         cv2.destroyAllWindows()
-
-#
-# if __name__ == "__main__":
-#     analyzer = CameraAnalyzer()
-#     analyzer.analyze_camera()
