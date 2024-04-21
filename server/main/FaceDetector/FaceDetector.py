@@ -1,9 +1,9 @@
 import os
 import cv2
 import numpy as np
+import uuid
 
 from server.settings import BASE_DIR
-
 
 class FaceDetector:
     # Здесь другие XML файлы можно посмотреть и найти
@@ -64,6 +64,7 @@ class FaceDetector:
             # Если не обнаружено глаз, считаем, что человек плачет
             if len(eyes) == 0: return True
         return False
+
 
 class CameraAnalyzer:
     def __init__(self):
@@ -150,6 +151,30 @@ class CameraAnalyzer:
             emotion = self.face_detector.detect_crying(frame, faces)
 
             print(f'Emotion: {emotion}, faces: {len(faces)}, eyes: {len(eyes)}, mouth: {len(mouth)}')
+
+            # Рисуем точки на изображении
+            for (x, y, w, h) in faces:
+                cv2.rectangle(frame, (x, y), (x + w, y + h), (255, 0, 0), 2)
+            for (eye_center_x, eye_center_y) in eyes:
+                cv2.circle(frame, (eye_center_x, eye_center_y), 3, (0, 255, 0), -1)
+            for (mouth_center_x, mouth_center_y) in mouth:
+                cv2.circle(frame, (mouth_center_x, mouth_center_y), 3, (0, 255, 0), -1)
+
+            # Покажите изображение с отмеченными точками
+            cv2.namedWindow("Analyzed Image")
+            cv2.resizeWindow("Analyzed Image", 640, 640)
+            cv2.imshow("Analyzed Image", frame)
+            cv2.waitKey(500)
+            cv2.destroyAllWindows()
+
+            # Определим путь к директории сохранения изображения
+            # '/home/redalexdad/Документы/GitHub/CryDetectMobile/photo'
+            save_path = os.path.join(BASE_DIR, 'photo')
+            # Создаем уникальное имя файла
+            unique_filename = str(uuid.uuid4()) + '.jpg'
+            # Сохраните изображение с отмеченными точками
+            cv2.imwrite(os.path.join(save_path, unique_filename), frame)
+
             return emotion
         except Exception as e:
             print(f"Error during image analysis: {e}")
