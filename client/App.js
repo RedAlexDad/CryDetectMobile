@@ -1,105 +1,106 @@
-import React, { useEffect, useState } from 'react';
-import { View, Text, TouchableOpacity, StyleSheet, Image } from 'react-native';
-import { Camera } from 'expo-camera';
-import axios from 'axios';
-import { DOMEN } from "./Consts";
-import * as FileSystem from 'expo-file-system';
+import { CameraView, useCameraPermissions } from 'expo-camera';
+import { useState, useRef } from 'react';
+import { Button, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
+import { DOMEN } from './Consts.ts';
 
 export default function App() {
-    const [hasPermission, setHasPermission] = useState(null);
-    const [type, setType] = useState(Camera.Constants.Type.back);
-    const [isLoading, setIsLoading] = useState(false);
-    const [cameraRef, setCameraRef] = useState(null);
-    const [capturedImage, setCapturedImage] = useState(null);
-    const [streaming, setStreaming] = useState(false);
-    const [intervalId, setIntervalId] = useState(null);
+    const [facing, setFacing] = useState('back');
+    const [permission, requestPermission] = useCameraPermissions();
+    const [isStreaming, setIsStreaming] = useState(false);
     const [emotionDetected, setEmotionDetected] = useState('Не обнаружено');
+    const cameraRef = useRef(null);
+    const intervalRef = useRef(null);
 
-    useEffect(() => {
-        (async () => {
-            const { status } = await Camera.requestCameraPermissionsAsync();
-            setHasPermission(status === 'granted');
-        })();
-    }, []);
-
-    const startStreaming = async () => {
-        setIsLoading(true);
-        const id = setInterval(async () => {
-            if (cameraRef) {
-                let photo = await cameraRef.takePictureAsync({quality: 0.1}); // Увеличиваем качество изображения
-                setCapturedImage(photo.uri);
-                try {
-                    const url = `${DOMEN}api/analyze_camera_photo/`;
-                    const formData = new FormData();
-                    formData.append('photo', {
-                        uri: photo.uri,
-                        type: 'image/jpeg',
-                        name: 'photo.jpg',
-                    });
-                    const response = await axios.post(url, formData, {
-                        headers: {
-                            'Content-Type': 'multipart/form-data',
-                        },
-                    });
-                    const is_emotion = response.data.emotion_detected;
-                    console.log('Emotion:', is_emotion);
-                    if (is_emotion) {
-                        setEmotionDetected('Плачет');
-                    } else{
-                        setEmotionDetected('Не плачет');
-                    }
-                } catch (error) {
-                    console.error('Error:', error);
-                }
-            }
-        }, 1000); // Отправка данных каждую секунду
-
-        setIntervalId(id);
-        setStreaming(true);
-        setIsLoading(false);
-    };
-
-    const stopStreaming = () => {
-        clearInterval(intervalId);
-        setStreaming(false);
-    };
-
-    if (hasPermission === null) {
+    if (!permission) {
+        // Загрузка разрешений камеры.
         return <View />;
     }
-    if (hasPermission === false) {
-        return <Text>No access to camera</Text>;
+
+    if (!permission.granted) {
+        // Разрешения на камеру еще не предоставлены.
+        return (
+            <View style={styles.container}>
+                <Text style={{ textAlign: 'center' }}>Мы нуждаемся в вашем разрешении для использования камеры</Text>
+                <Button onPress={requestPermission} title="Предоставить разрешение" />
+            </View>
+        );
     }
+
+    function toggleCameraFacing() {
+        setFacing(current => (current === 'back' ? 'front' : 'back'));
+    }
+
+    const startStreaming = async () => {
+        if (!cameraRef.current) {
+            console.warn('Камера не готова');
+            return;
+        }
+
+        setIsStreaming(true);
+        intervalRef.current = setInterval(async () => {
+            if (cameraRef.current) {
+                try {
+                    let photo = await cameraRef.current.takePictureAsync({ quality: 0.1, skipProcessing: true });
+                    handleEmotionDetection(photo.uri);
+                } catch (error) {
+                    console.error('Ошибка при создании фото:', error);
+                }
+            }
+        }, 1000); // Захват фотографии каждую секунду
+    };
+
+
+    const stopStreaming = () => {
+        setIsStreaming(false);
+        clearInterval(intervalRef.current);
+    };
+
+    const handleEmotionDetection = async (photoUri) => {
+        try {
+            const formData = new FormData();
+            formData.append('photo', {
+                uri: photoUri,
+                type: 'image/jpeg',
+                name: 'photo.jpg',
+            });
+            const response = await fetch(`${DOMEN}api/analyze_camera_photo/`, {
+                method: 'POST',
+                body: formData,
+            });
+            const { emotion_detected } = await response.json();
+            setEmotionDetected(emotion_detected ? 'Плачет' : 'Не плачет');
+        } catch (error) {
+            console.error('Error:', error);
+        }
+    };
 
     return (
         <View style={styles.container}>
-            <Camera style={[styles.camera, { aspectRatio: 3 / 4 }]} type={type} ref={(ref) => { setCameraRef(ref); }}>
+            <CameraView
+                style={styles.camera}
+                facing={facing}
+                ref={cameraRef}
+            >
                 <View style={styles.buttonContainer}>
-                    {!streaming ? (
-                        <TouchableOpacity
-                            style={styles.button}
-                            onPress={startStreaming}
-                            disabled={isLoading}
-                        >
+                    <TouchableOpacity style={styles.button} onPress={toggleCameraFacing}>
+                        <Text style={styles.text}>Поменять камеру</Text>
+                    </TouchableOpacity>
+                    {!isStreaming ? (
+                        <TouchableOpacity style={styles.button} onPress={startStreaming}>
                             <Text style={styles.text}>Начать стрим</Text>
                         </TouchableOpacity>
                     ) : (
-                        <TouchableOpacity
-                            style={styles.button}
-                            onPress={stopStreaming}
-                            disabled={isLoading}
-                        >
+                        <TouchableOpacity style={styles.button} onPress={stopStreaming}>
                             <Text style={styles.text}>Остановить стрим</Text>
                         </TouchableOpacity>
                     )}
                 </View>
-            </Camera>
+            </CameraView>
             <View style={styles.emotionContainer}>
                 <Text style={[styles.emotionText, emotionDetected === 'Плачет' ? styles.greenText : styles.redText]}>
                     Эмоция: {emotionDetected}
                 </Text>
             </View>
-            {/*{capturedImage && <Image source={{ uri: capturedImage }} style={styles.capturedImage} />}*/}
         </View>
     );
 }
@@ -107,28 +108,24 @@ export default function App() {
 const styles = StyleSheet.create({
     container: {
         flex: 1,
+        justifyContent: 'center',
     },
     camera: {
         flex: 1,
     },
     buttonContainer: {
+        flexDirection: 'row',
+        justifyContent: 'space-around',
         position: 'absolute',
-        alignItems: 'center',
-        width: '100%',
         bottom: 20,
+        width: '100%',
     },
     button: {
-        position: 'absolute',
-        alignItems: 'center',
-        left: 130,
-        // width: '100%',
-        bottom: 0,
         backgroundColor: '#007AFF',
         padding: 10,
-        borderRadius: 100,
+        borderRadius: 5,
     },
     text: {
-        alignItems: 'center',
         fontSize: 18,
         color: 'white',
     },
@@ -139,8 +136,9 @@ const styles = StyleSheet.create({
         alignItems: 'center',
     },
     emotionText: {
-        fontSize: 18,
-        color: 'white',
+        fontSize: 24,
+        fontWeight: 'bold',
+        textAlign: 'center',
     },
     greenText: {
         color: 'green',

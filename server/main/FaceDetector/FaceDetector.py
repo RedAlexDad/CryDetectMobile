@@ -161,11 +161,11 @@ class CameraAnalyzer:
                 cv2.circle(frame, (mouth_center_x, mouth_center_y), 3, (0, 255, 0), -1)
 
             # Покажите изображение с отмеченными точками
-            cv2.namedWindow("Analyzed Image")
-            cv2.resizeWindow("Analyzed Image", 640, 640)
-            cv2.imshow("Analyzed Image", frame)
-            cv2.waitKey(500)
-            cv2.destroyAllWindows()
+            # cv2.namedWindow("Analyzed Image")
+            # cv2.resizeWindow("Analyzed Image", 640, 640)
+            # cv2.imshow("Analyzed Image", frame)
+            # cv2.waitKey(500)
+            # cv2.destroyAllWindows()
 
             # Определим путь к директории сохранения изображения
             # '/home/redalexdad/Документы/GitHub/CryDetectMobile/photo'
